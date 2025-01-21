@@ -1,0 +1,219 @@
+To ensure that the playbook fails if any of the storage groups (SGs) are already present or already created, you can use the failed_when directive in Ansible. This will allow you to explicitly define a condition for failure based on the output of the dellemc.powermax.storagegroup module.
+
+Here's how you can update your playbook:
+
+- name: set flags
+  set_fact:
+     chSgCreated: true
+
+- name: Create Local Child storage group
+  dellemc.powermax.storagegroup:
+    unispherehost: "{{ tgt_management_host }}"
+    verifycert: "{{ verifycert }}"
+    user: abc
+    password: bcd
+    serial_no: "{{ target_array }}"
+    sg_name: "{{ item }}"
+    service_level: "diamond"
+    state: "present"
+  register: chSGCreateResponse
+  loop: "{{ uniquelistofallchildsgs }}"
+  failed_when: 
+    - "'already exists' in chSGCreateResponse.msg"
+    - "chSGCreateResponse.failed"
+
+
+###########################
+
+
+you can use the changed property to determine success or failure. The changed property indicates whether the module made any changes. If no changes are made (i.e., changed: false), it means the SG already exists, and you can fail the playbook in that case.
+
+Here’s how to modify your playbook:
+
+- name: set flags
+  set_fact:
+     chSgCreated: true
+
+- name: Create Local Child storage group
+  dellemc.powermax.storagegroup:
+    unispherehost: "{{ tgt_management_host }}"
+    verifycert: "{{ verifycert }}"
+    user: abc
+    password: bcd
+    serial_no: "{{ target_array }}"
+    sg_name: "{{ item }}"
+    service_level: "diamond"
+    state: "present"
+  register: chSGCreateResponse
+  loop: "{{ uniquelistofallchildsgs }}"
+  failed_when: 
+    - not chSGCreateResponse.changed
+    - chSGCreateResponse.failed
+
+
+###############################
+
+- name: set flags
+  set_fact:
+     chSgCreated: true
+
+- name: Create Local Child storage group
+  dellemc.powermax.storagegroup:
+    unispherehost: "{{ tgt_management_host }}"
+    verifycert: "{{ verifycert }}"
+    user: abc
+    password: bcd
+    serial_no: "{{ target_array }}"
+    sg_name: "{{ item }}"
+    service_level: "diamond"
+    state: "present"
+  register: chSGCreateResponse
+  loop: "{{ uniquelistofallchildsgs }}"
+  failed_when: 
+    - not chSGCreateResponse.changed
+    - chSGCreateResponse.failed
+#####################################
+
+
+Here are a few additional methods to handle the scenario where the playbook should fail if a storage group (SG) already exists or no new SGs are created:
+
+Method 1: Using when Condition
+You can use the when directive with specific conditions before failing the task.
+
+yaml
+Copy
+Edit
+- name: Create Local Child storage group
+  dellemc.powermax.storagegroup:
+    unispherehost: "{{ tgt_management_host }}"
+    verifycert: "{{ verifycert }}"
+    user: abc
+    password: bcd
+    serial_no: "{{ target_array }}"
+    sg_name: "{{ item }}"
+    service_level: "diamond"
+    state: "present"
+  register: chSGCreateResponse
+  loop: "{{ uniquelistofallchildsgs }}"
+
+- name: Fail if SG already exists or not created
+  fail:
+    msg: "Storage Group '{{ item }}' already exists or was not created successfully."
+  when: 
+    - not chSGCreateResponse.changed
+    - chSGCreateResponse.failed
+  loop: "{{ chSGCreateResponse.results }}"
+Method 2: Validate Response After the Loop
+Collect all results and validate them after the loop using assert.
+
+yaml
+Copy
+Edit
+- name: Create Local Child storage group
+  dellemc.powermax.storagegroup:
+    unispherehost: "{{ tgt_management_host }}"
+    verifycert: "{{ verifycert }}"
+    user: abc
+    password: bcd
+    serial_no: "{{ target_array }}"
+    sg_name: "{{ item }}"
+    service_level: "diamond"
+    state: "present"
+  register: chSGCreateResponse
+  loop: "{{ uniquelistofallchildsgs }}"
+
+- name: Assert all SGs were created
+  assert:
+    that:
+      - item.changed
+      - not item.failed
+    fail_msg: "Storage Group creation failed or some SGs already exist."
+  with_items: "{{ chSGCreateResponse.results }}"
+Method 3: Use a Post-Processing Task
+Parse the results list after the loop to determine if any SG already exists.
+
+yaml
+Copy
+Edit
+- name: Create Local Child storage group
+  dellemc.powermax.storagegroup:
+    unispherehost: "{{ tgt_management_host }}"
+    verifycert: "{{ verifycert }}"
+    user: abc
+    password: bcd
+    serial_no: "{{ target_array }}"
+    sg_name: "{{ item }}"
+    service_level: "diamond"
+    state: "present"
+  register: chSGCreateResponse
+  loop: "{{ uniquelistofallchildsgs }}"
+
+- name: Fail if any SG was not created
+  fail:
+    msg: "One or more Storage Groups were not created. Check the results: {{ chSGCreateResponse.results }}"
+  when: 
+    - "'false' in [result.changed for result in chSGCreateResponse.results]"
+Method 4: Using block with Rescue
+Use an block to handle failures explicitly and stop execution if conditions aren't met.
+
+yaml
+Copy
+Edit
+- block:
+    - name: Create Local Child storage group
+      dellemc.powermax.storagegroup:
+        unispherehost: "{{ tgt_management_host }}"
+        verifycert: "{{ verifycert }}"
+        user: abc
+        password: bcd
+        serial_no: "{{ target_array }}"
+        sg_name: "{{ item }}"
+        service_level: "diamond"
+        state: "present"
+      register: chSGCreateResponse
+      loop: "{{ uniquelistofallchildsgs }}"
+  
+    - name: Check if all SGs were created
+      assert:
+        that:
+          - item.changed
+        fail_msg: "Storage Group '{{ item.item }}' already exists or was not created successfully."
+      with_items: "{{ chSGCreateResponse.results }}"
+
+  rescue:
+    - name: Fail playbook
+      fail:
+        msg: "Failed to create all storage groups."
+Method 5: Check SG Existence First
+Use a task to check if the SG exists before attempting to create it.
+
+- name: Check if storage group exists
+  dellemc.powermax.storagegroup:
+    unispherehost: "{{ tgt_management_host }}"
+    verifycert: "{{ verifycert }}"
+    user: abc
+    password: bcd
+    serial_no: "{{ target_array }}"
+    sg_name: "{{ item }}"
+    state: "present"
+  register: sgCheckResponse
+  loop: "{{ uniquelistofallchildsgs }}"
+
+- name: Fail if SG already exists
+  fail:
+    msg: "Storage Group '{{ item.item }}' already exists."
+  when: sgCheckResponse.changed == false
+  with_items: "{{ sgCheckResponse.results }}"
+
+- name: Create Local Child storage group
+  dellemc.powermax.storagegroup:
+    unispherehost: "{{ tgt_management_host }}"
+    verifycert: "{{ verifycert }}"
+    user: abc
+    password: bcd
+    serial_no: "{{ target_array }}"
+    sg_name: "{{ item }}"
+    service_level: "diamond"
+    state: "present"
+  register: chSGCreateResponse
+  loop: "{{ uniquelistofallchildsgs }}"
