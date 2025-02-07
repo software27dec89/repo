@@ -1,0 +1,19 @@
+- name: Run a basic command on Windows from a Linux control node
+  hosts: localhost  # Runs on the Ansible control node
+  gather_facts: no
+  tasks:
+    - name: Get system information from Windows
+      win_shell: systeminfo
+      register: sys_info
+      delegate_to: 192.168.1.100  # Replace with your Windows server IP
+      vars:
+        ansible_user: Administrator
+        ansible_password: YourSecurePassword
+        ansible_port: 5985
+        ansible_connection: winrm
+        ansible_winrm_transport: basic
+        ansible_winrm_server_cert_validation: ignore
+
+    - name: Display output
+      debug:
+        msg: "{{ sys_info.stdout_lines }}"
